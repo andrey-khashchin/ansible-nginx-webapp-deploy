@@ -1,0 +1,25 @@
+---
+- name: Restart UWSGI web application
+  supervisorctl: 
+    name: "{{ appname}}" 
+    state: restarted 
+    config: /etc/supervisor/supervisord.conf
+  become: yes
+
+- name: Start supervisord
+  service: 
+    name: supervisor
+    state: started
+  become: yes
+
+- name: Stop supervisord
+  service: 
+    name: supervisor 
+    state: stop
+  become: yes
+
+- name: Restart supervisord
+  service: 
+    name: supervisor 
+    state: restarted
+  become: yes

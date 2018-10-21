@@ -1,0 +1,116 @@
+---
+- name: Set status_task fact if not defined
+  set_fact: 
+    task_status: "OK"
+  when: task_status is undefined
+  tags: deploy_webapp
+
+- block:
+
+   - name: Create {{ appname }} web application folder
+     file: 
+       path: "{{ app_path }}/myappenv"
+       state: directory 
+       owner: "{{ uwsgi_user }}"
+       group: "{{ uwsgi_user }}"
+       mode: 0755
+
+   - name: Create {{ appname }} web application log folder
+     file: 
+       path: "{{ app_path }}/myappenv/log"
+       state: directory 
+       owner: "{{ uwsgi_user }}"
+       group: "{{ uwsgi_user }}"
+       mode: 0755       
+
+   - name: Create virtualenv for {{ appname }} web application
+     command: virtualenv {{ app_path }}/myappenv
+
+   - name: Change owner of file
+     file: 
+       path: "{{ app_path }}" 
+       owner: "{{ uwsgi_user }}" 
+       group: "{{ uwsgi_user }}"
+       mode: 0755 
+       recurse: yes
+
+   - name: Create {{ appname }} web application log folder 
+     file: 
+       path: "/var/log/{{ logname }}" 
+       state: directory
+       owner: "{{ uwsgi_user }}"
+       group: "{{ uwsgi_user }}"
+       mode: 0755
+     
+   - name: Create {{ appname }} web application error log file
+     file: 
+       path: "/var/log/{{ logname }}/{{ appname }}-error.log" 
+       state: touch
+       owner: "{{ uwsgi_user }}"
+       group: "{{ uwsgi_user }}"
+       mode: 0644
+      
+   - name: Create {{ appname }} web application access log file
+     file: 
+       path: "/var/log/{{ logname }}/{{ appname }}-access.log"
+       state: touch
+       owner: "{{ uwsgi_user }}"
+       group: "{{ uwsgi_user }}"
+       mode: 0644
+
+   - name: Copy {{ appname }} web application to web application folder
+     template:
+       src: "{{ appname }}.py" 
+       dest: "{{ app_path }}/{{ appname }}.py" 
+       owner: "{{ uwsgi_user }}"
+       group: "{{ uwsgi_user }}"
+       mode: 0644
+
+   - name: Copy UWSGI ini file to web application folder
+     template:
+       src: "{{ appname }}.ini.j2" 
+       dest: "{{ app_path }}/{{ appname }}.ini" 
+       owner: "{{ uwsgi_user }}"
+       group: "{{ uwsgi_user }}"
+       mode: 0644
+
+   - name: Copy requirements.txt to web application folder
+     template:
+       src: requirements.txt.j2 
+       dest: "{{ app_path }}/requirements.txt" 
+       owner: "{{ uwsgi_user }}"
+       group: "{{ uwsgi_user }}"
+       mode: 0644
+
+   - name: Copy supervisor conf file for web application to destination folder
+     template: 
+       src: supervisor.conf 
+       dest: /etc/supervisor/conf.d/supervisor.conf
+     become: yes
+     notify: start supervisord
+
+   - name: Install UWSGI & psutil in virtualenv
+     pip: 
+       requirements: "{{ app_path }}/requirements.txt"
+       virtualenv: "{{ app_path }}/myappenv"
+     become: yes
+
+   - name: Update supervisor configuration
+     command: supervisorctl update
+     become: yes 
+
+   - name: Start {{ appname }} web application in supervisor
+     command: supervisorctl restart {{ appname }}
+     become: yes 
+
+   - name: Reload NGINX configuration
+     command: systemctl restart nginx
+     become: yes
+
+  when: task_status == "OK"
+  tags: deploy_webapp
+
+  rescue:
+   - name: Failure detected in deploy_webapp section
+     set_fact: 
+       task_status: "FAILED" 

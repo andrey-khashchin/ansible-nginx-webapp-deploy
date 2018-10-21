@@ -1,0 +1,111 @@
+---
+- name: Set status_task fact if not defined
+  set_fact: 
+    task_status: "OK"
+  when: task_status is undefined
+  tags: setup_webserver
+
+- block:
+
+   - name: Create folder for self-signed sertificate
+     file: 
+       path: "{{ ssl_certs_path }}"
+       state: directory
+       owner: "{{ ssl_certs_path_owner }}"
+       group: "{{ ssl_certs_path_group }}"
+       mode: 0755
+
+   - name: Generate RSA key
+     command: openssl genrsa -out {{ ssl_certs_privkey_path }} {{ ssl_certs_key_size }}
+     args: 
+       creates: "{{ ssl_certs_privkey_path }}"
+     become: yes
+
+   - name: Set permissions for RSA key
+     file: 
+       path: "{{ ssl_certs_privkey_path }}"
+       owner: "{{ ssl_certs_path_owner }}"
+       group: "{{ ssl_certs_path_group }}"
+       mode: 0644
+
+   - name: Generate certificate config file
+     template:
+       src: sslcert.conf.j2
+       dest: "{{ ssl_certs_conf_path }}"
+       owner: "{{ ssl_certs_path_owner }}"
+       group: "{{ ssl_certs_path_group }}"
+       mode: 0644
+
+   - name: Generate CSR
+     command: openssl req -config {{ ssl_certs_conf_path }} -new -sha256 -key {{ ssl_certs_privkey_path }} -out {{ ssl_certs_csr_path }}
+     args: 
+       creates: "{{ ssl_certs_csr_path }}"
+     become: yes
+
+   - name: Set permissions for CSR file
+     file: 
+       path: "{{ ssl_certs_csr_path }}"
+       owner: "{{ ssl_certs_path_owner }}"
+       group: "{{ ssl_certs_path_group }}"
+       mode: 0644
+
+   - name: Generate self-signed SSL certificate
+     command: openssl req -config {{ ssl_certs_conf_path }} -nodes -x509 -sha256 -days {{ ssl_certs_days }} -in {{ ssl_certs_csr_path }} -key {{ ssl_certs_privkey_path }} -out {{ ssl_certs_cert_path }} -extensions v3_ca
+     args: 
+       creates: "{{ ssl_certs_cert_path }}"
+     become: yes
+
+   - name: Set permissions for self-signed SSL certificate
+     file: 
+       path: "{{ ssl_certs_cert_path }}"
+       owner: "{{ ssl_certs_path_owner }}"
+       group: "{{ ssl_certs_path_group }}"
+       mode: 0644
+
+   - name: Create NGINX snippet for SSL key and certificate
+     template:
+       src: self-signed.conf.j2
+       dest: "{{ nginx_snippets_path }}/self-signed.conf"
+       owner: "{{ ssl_certs_path_owner }}"
+       group: "{{ ssl_certs_path_group }}"
+       mode: 0644
+
+   - name: Create NGINX snippet with encryption settings
+     template:
+       src: ssl-params.conf.j2
+       dest: "{{ nginx_snippets_path }}/ssl-params.conf"
+       owner: "{{ ssl_certs_path_owner }}"
+       group: "{{ ssl_certs_path_group }}"
+       mode: 0644
+
+   - name: Copy new NGINX virtual host
+     template:
+       src: "{{ appname }}.j2"
+       dest: "/etc/nginx/sites-available/{{ appname }}"
+     notify:
+       - reload nginx
+
+   - name: Remove default NGINX virtual host
+     file:
+       path: /etc/nginx/sites-enabled/default
+       state: absent
+     become: yes
+     notify:
+       - reload nginx
+
+   - name: Enable new NGINX virtual host
+     file: 
+       src: "/etc/nginx/sites-available/{{ appname }}"
+       dest: "/etc/nginx/sites-enabled/{{ appname }}"
+       state: link
+     become: yes
+     notify:
+       - reload nginx
+  
+  when: task_status == "OK"
+  tags: setup_webserver
+
+  rescue:
+   - name: Failure detected in setup_webserver section
+     set_fact: 
+       task_status: "FAILED" 

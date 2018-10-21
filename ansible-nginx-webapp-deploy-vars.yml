@@ -1,0 +1,6 @@
+---
+nginx_hostname: msdwebdemo.local
+uwsgi_user: vagrant
+appname: msd_app
+app_path: /home/{{ uwsgi_user }}/{{ appname }}
+logname: "{{ appname }}-logs"

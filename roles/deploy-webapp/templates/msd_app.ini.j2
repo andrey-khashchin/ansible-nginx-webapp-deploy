@@ -1,0 +1,11 @@
+[uwsgi]
+module = {{ appname }}:application
+master = true
+enable-threads = true
+processes = 2
+threads = 4
+socket = /home/{{ uwsgi_user }}/{{ appname }}/{{ appname }}.sock
+chmod-socket = 666
+vacuum = true
+stopsignal = QUIT
+die-on-term = true

@@ -1,0 +1,95 @@
+---
+- hosts: webservers
+  become: true
+  vars_files:
+    - ansible-nginx-webapp-deploy-vars.yml
+
+  pre_tasks:
+
+    - block:
+
+       - name: Add NGINX repository
+         apt_repository: 
+           repo: 'ppa:nginx/stable'
+
+       - name: Install required system packages
+         apt: 
+           name: "{{item}}"
+           state: present
+         with_items:
+           - build-essential
+           - python-dev
+           - python-setuptools
+           - libpcre3
+           - libpcre3-dev
+           - nginx
+           - openssl
+           - stress
+
+       - name: Enable NGINX service after reboot
+         command: systemctl enable nginx.service
+         become: yes
+
+       - name: Download bootstrapping script to install pip, setuptool and wheel
+         get_url: 
+           url: https://bootstrap.pypa.io/get-pip.py 
+           dest: /tmp
+
+       - name: Invoke bootstrapping script
+         command: "python /tmp/get-pip.py"
+
+       - name: Install required Python libraries
+         pip: 
+           name: "{{ item }}"
+           state: present
+           extra_args: '--upgrade'
+         with_items:
+           - virtualenv
+           - uwsgi
+           - psutil
+         become: yes
+
+       - name: Install supervisord
+         apt: 
+          name: supervisor
+          state: present
+         become: yes
+
+       - name: Set permissions for supervisor config and log folders
+         file: 
+           path: "{{ item }}"
+           state: directory
+           owner: "{{ uwsgi_user }}"
+           group: "{{ uwsgi_user }}"
+           mode: 0755
+         with_items:
+           - /etc/supervisor
+           - /etc/supervisor/conf.d
+           - /var/log/supervisor
+         become: yes
+
+       - name: Set permissions in supervisor default configuration
+         ini_file: 
+           dest: /etc/supervisor/supervisord.conf 
+           section: unix_http_server
+           option: "{{ item.key }}" 
+           value: "{{ item.value }}"
+         with_dict:
+           chmod: "0770"
+           chown: root:www-data
+         become: yes
+
+       - name: Set status_task fact 
+         set_fact: 
+           task_status: "OK"
+
+      tags: setup_common
+
+      rescue: 
+       - name: Failure detected in setup_common section
+         set_fact: 
+           task_status: "FAILED"
+
+  roles:
+    - setup-webserver
+    - deploy-webapp
